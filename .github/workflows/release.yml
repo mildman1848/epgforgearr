@@ -37,4 +37,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/epgforgearr-*.zip dist/SHA256SUMS --verify-tag --generate-notes
+        run: |
+          if [[ "$RELEASE_TAG" == *-dev ]]; then
+            gh release create "$RELEASE_TAG" dist/epgforgearr-*.zip dist/SHA256SUMS --verify-tag --generate-notes --prerelease
+          else
+            gh release create "$RELEASE_TAG" dist/epgforgearr-*.zip dist/SHA256SUMS --verify-tag --generate-notes
+          fi
