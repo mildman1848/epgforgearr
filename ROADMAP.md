@@ -20,18 +20,18 @@ link streams, or replace user-controlled EPG mappings.
 ## Milestones
 
 Status: **Next** — planned; **In progress** — implementation underway;
+**Blocked** — a verified source or prerequisite is needed;
 **Done** — implemented and verified.
 
-### 1. Direct provider adapter coverage — Next
+### 1. Direct provider adapter coverage — Blocked (source not verified)
 
 Tracking: [#7](https://github.com/mildman1848/epgforgearr/issues/7)
 
-- Implement the planned `simpli_tv` adapter for Austrian/PULS24 schedules using
-  a documented direct-source flow.
-- Keep the adapter behind the existing provider registry/profile contract.
-- Produce provider-specific XMLTV and Dispatcharr EPGSource outputs.
-- Add fixture tests for channel normalization, programme parsing, timezone,
-  empty/error responses, and XMLTV validity.
+- Initial public-source review found simpliTV channel-lineup documents but did not
+  verify a direct machine-readable programme schedule feed or schema.
+- Do not consume a third-party aggregate or invent an undocumented endpoint.
+- Resume adapter work when an official direct feed/specification or permitted
+  fixture is available; see the progress note on issue #7.
 
 ### 2. Provider health and freshness — Next
 
