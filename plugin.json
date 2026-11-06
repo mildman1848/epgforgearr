@@ -1,8 +1,8 @@
 {
   "name": "EPGForgearr",
-  "version": "0.3.5-dev",
+  "version": "0.3.6-dev",
   "description": "Supplemental XMLTV EPG generator for Dispatcharr. Workflow: scan missing EPG, review suggestions, generate XMLTV, install Dispatcharr EPG source.",
-  "author": "Mildman1848 + Hermes Agent",
+  "author": "Mildman1848",
   "license": "AGPL-3.0-only",
   "repo_url": "https://github.com/mildman1848/epgforgearr",
   "help_url": "https://github.com/mildman1848/epgforgearr#readme",
