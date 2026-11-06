@@ -39,7 +39,7 @@ jobs:
         run: python scripts/build_plugin_zip.py
 
       - name: Upload plugin ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: epgforgearr-plugin-zip
           path: dist/epgforgearr-*.zip
