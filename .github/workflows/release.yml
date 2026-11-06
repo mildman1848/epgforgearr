@@ -1,0 +1,40 @@
+name: Build release ZIP
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check release tag matches plugin version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=$(python -c 'import json; print(json.load(open("plugin.json", encoding="utf-8"))["version"])')
+          test "$RELEASE_TAG" = "v$VERSION"
+
+      - name: Build plugin ZIP and checksum
+        run: |
+          python scripts/build_plugin_zip.py
+          cd dist
+          sha256sum epgforgearr-*.zip > SHA256SUMS
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/epgforgearr-*.zip dist/SHA256SUMS --verify-tag --generate-notes

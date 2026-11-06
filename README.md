@@ -20,6 +20,16 @@ No Dispatcharr Channels are created automatically. Channel creation and stream l
 
 Michaz' public EPG scripts are used as endpoint/field references only. EPGForgearr does **not** consume Michaz-generated aggregate XMLTV as a provider.
 
+## Project links and attribution
+
+- **Dispatcharr:** [Dispatcharr/Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) — host application and plugin integration.
+- **Magenta TV:** provider API adapter implemented by EPGForgearr; independent of the provider.
+- **TV Digital DE:** [TV Digital](https://www.tvdigital.de/) — guide data provider accessed through its public service API.
+- **EPG reference scripts:** [michaz1988/michaz1988.github.io](https://github.com/michaz1988/michaz1988.github.io/tree/main/.epg) — endpoint/field reference only; generated aggregate XMLTV is not consumed as a provider.
+- **Related stream plugin:** [Kodiboxarr](https://github.com/mildman1848/kodiboxarr) imports streams separately; EPGForgearr also works as a standalone supplemental EPG plugin.
+
+This project is maintained independently by Mildman1848 and is not affiliated with or endorsed by Dispatcharr, Magenta TV, TV Digital, or the reference-script author.
+
 ## Main workflow
 
 Recommended production-safe flow:

@@ -1,4 +1,4 @@
-name: Test
+name: Test and package
 
 on:
   push:
@@ -22,14 +22,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: pip
 
-      - name: Install test dependencies
+      - name: Install test and lint dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest requests
+          python -m pip install -r requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Lint Python
+        run: ruff check .
 
       - name: Build Dispatcharr plugin ZIP
         run: python scripts/build_plugin_zip.py
