@@ -1,6 +1,6 @@
 {
   "name": "EPGForgearr",
-  "version": "0.3.6-dev",
+  "version": "0.3.7",
   "description": "Supplemental XMLTV EPG generator for Dispatcharr. Workflow: scan missing EPG, review suggestions, generate XMLTV, install Dispatcharr EPG source.",
   "author": "Mildman1848",
   "license": "AGPL-3.0-only",

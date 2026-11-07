@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -325,13 +326,13 @@ def generate_all_provider_sources(
                 "generated": generated,
                 "installed": installed,
             }
-            if status == "ok":
+            if status in {"ok", "warning"}:
                 ok_count += 1
             else:
                 error_count += 1
         except Exception as exc:  # noqa: BLE001 - one provider failing must not abort the rest
-            logger.exception("epgforgearr: full generation failed for provider %s", provider_id)
-            results[provider_id] = {"status": "error", "message": f"{type(exc).__name__}: {exc}"}
+            logger.error("epgforgearr: full generation failed for provider %s (%s)", provider_id, type(exc).__name__)
+            results[provider_id] = {"status": "error", "message": f"{type(exc).__name__} (details redacted)"}
             error_count += 1
 
     overall = "ok" if error_count == 0 else ("warning" if ok_count else "error")
@@ -353,7 +354,8 @@ def install_epg_source(settings: dict[str, Any], logger: logging.Logger | None =
         raise FileNotFoundError(f"generated EPG file not found: {source_path}")
 
     EPGSource = _import_epg_source_model()
-    defaults = {
+    name = str(settings.get("epg_source_name") or EPG_SOURCE_NAME)
+    config = {
         "source_type": "xmltv",
         "url": "",
         "file_path": str(source_path),
@@ -361,22 +363,71 @@ def install_epg_source(settings: dict[str, Any], logger: logging.Logger | None =
         "priority": int(settings.get("epg_source_priority", 60)),
         "refresh_interval": int(settings.get("epg_source_refresh_hours", 24)),
         "custom_properties": {"managed_by": PLUGIN_ID, "output_path": str(source_path)},
-        "status": "success",
-        "last_message": "Managed by EPGForgearr",
     }
-    source, created = EPGSource.objects.update_or_create(name=str(settings.get("epg_source_name") or EPG_SOURCE_NAME), defaults=defaults)
-    readback = EPGSource.objects.get(pk=source.pk)
+    # Never pre-set status="success": that is only true once Dispatcharr has imported the file.
+    source, created = EPGSource.objects.get_or_create(
+        name=name, defaults={**config, "status": "idle", "last_message": "Awaiting Dispatcharr import"}
+    )
+    in_flight = not created and getattr(source, "status", "") in {"fetching", "parsing"}
+    if not created:
+        for key, value in config.items():
+            setattr(source, key, value)
+        source.save(update_fields=list(config))
     logger.info("epgforgearr %s Dispatcharr EPGSource id=%s path=%s", "created" if created else "updated", source.pk, source_path)
-    return {
-        "status": "ok",
-        "message": f"EPGSource {'created' if created else 'updated'}: {readback.name}",
-        "epg_source_id": readback.id,
-        "epg_source_name": readback.name,
-        "file_path": getattr(readback, "file_path", ""),
-        "is_active": bool(readback.is_active),
-        "priority": int(readback.priority),
+    result = {
+        "epg_source_id": source.pk,
+        "epg_source_name": name,
+        "file_path": str(source_path),
+        "is_active": config["is_active"],
+        "priority": config["priority"],
         "created": created,
     }
+    if not config["is_active"]:
+        return {**result, "status": "ok", "message": f"EPGSource {'created' if created else 'updated'} (inactive, no import): {name}"}
+
+    # A new active source is queued by Dispatcharr's own post_save signal
+    # (trigger_refresh_on_new_epg_source, v0.33.0); enqueueing here too would duplicate it.
+    # Existing sources get an explicit forced refresh unless one is already running.
+    if not created and not in_flight:
+        try:
+            EPGSource.objects.filter(pk=source.pk).update(status="idle", last_message="Refresh queued by EPGForgearr")
+            _import_refresh_task().delay(source.pk, force=True)
+        except Exception as exc:  # noqa: BLE001 - queue/broker failure must not look like success
+            logger.error("epgforgearr: could not queue EPG refresh for source %s (%s)", source.pk, type(exc).__name__)
+            return {**result, "status": "error", "refresh_queued": False,
+                    "message": f"EPGSource saved but refresh could not be queued ({type(exc).__name__}): {name}"}
+    return {**result, **_wait_for_import(source.pk, name, _import_wait_seconds(settings))}
+
+
+def _import_wait_seconds(settings: dict[str, Any]) -> float:
+    """Brief synchronous wait (default 3s, hard cap 5s) to stay under the plugin action HTTP timeout."""
+    try:
+        value = float(settings.get("epg_import_wait_seconds", 3))
+    except (TypeError, ValueError):
+        return 3.0
+    return min(max(value, 0.0), 5.0) if value == value else 3.0  # value == value: reject NaN
+
+
+def _wait_for_import(source_id: int, name: str, wait_seconds: float, poll_seconds: float = 2.0) -> dict[str, Any]:
+    """Read the model back until Dispatcharr reports a real import, or the bounded wait ends."""
+    EPGSource = _import_epg_source_model()
+    EPGData, ProgramData = _import_epg_data_models()
+    deadline = time.monotonic() + max(wait_seconds, 0)
+    while True:
+        source = EPGSource.objects.get(pk=source_id)
+        channels = EPGData.objects.filter(epg_source_id=source_id).count()
+        programmes = ProgramData.objects.filter(epg__epg_source_id=source_id).count()
+        counts = {"refresh_queued": True, "epg_data_count": channels, "programme_count": programmes, "source_status": source.status}
+        if source.status == "error":
+            return {**counts, "status": "error", "message": f"Dispatcharr import failed for EPGSource: {name}"}
+        if source.status == "success" and channels and programmes:
+            return {**counts, "status": "ok", "message": f"EPGSource imported ({channels} channels, {programmes} programmes): {name}"}
+        if source.status == "success" and channels:
+            # Dispatcharr only parses programmes for channels mapped to an EPG entry.
+            return {**counts, "status": "warning", "message": f"EPGSource imported {channels} channels but no programmes yet (map channels to this source): {name}"}
+        if time.monotonic() >= deadline:
+            return {**counts, "status": "pending", "message": f"EPGSource saved, Dispatcharr import not confirmed yet: {name}"}
+        time.sleep(poll_seconds)
 
 
 def _dispatcharr_kodibox_rows(include_existing: bool) -> list[dict[str, Any]]:
@@ -425,6 +476,18 @@ def _import_epg_source_model():
     from apps.epg.models import EPGSource
 
     return EPGSource
+
+
+def _import_epg_data_models():
+    from apps.epg.models import EPGData, ProgramData
+
+    return EPGData, ProgramData
+
+
+def _import_refresh_task():
+    from apps.epg.tasks import refresh_epg_data
+
+    return refresh_epg_data
 
 
 def _index_magenta_channels(channels: list[dict[str, Any]]) -> dict[str, Any]:

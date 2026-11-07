@@ -33,16 +33,21 @@ Tracking: [#7](https://github.com/mildman1848/epgforgearr/issues/7)
 - Resume adapter work when an official direct feed/specification or permitted
   fixture is available; see the progress note on issue #7.
 
-### 2. Provider health and freshness — Next
+### 2. Provider health and freshness — In progress
 
 Tracking: [#8](https://github.com/mildman1848/epgforgearr/issues/8)
 
-- Report per-provider last successful fetch, schedule coverage window, channel
-  and programme counts, and sanitized last error.
-- Distinguish a genuinely empty schedule from network, parse, and authentication
-  failures; do not replace a valid output with empty data on failed refresh.
-- Preserve atomic writes and independent per-provider outputs.
-- Add tests for stale data and failed refresh preserving the last good output.
+- [x] Record per-provider last attempt/success, coverage window from programme
+  timestamps, channel/programme counts, and sanitized errors in scheduler state.
+- [x] Distinguish a genuinely empty schedule from fetch failures; preserve the
+  last good XMLTV and gzip outputs when a provider refresh fails.
+- [x] Test coverage calculations, redaction, empty schedules, last-good output
+  preservation (including gzip-publish and rollback failures), and provider-health
+  retention locally (48 tests pass; Ruff CI rules pass).
+- [ ] Verify persisted health through a full scheduled refresh with Dispatcharr's
+  real provider/runtime environment before closing the milestone.
+
+Local implementation is not yet released or deployed.
 
 ### 3. Candidate search and coverage review — Next
 

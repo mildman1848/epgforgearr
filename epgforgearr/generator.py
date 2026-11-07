@@ -4,7 +4,10 @@ import gzip
 import json
 import logging
 import os
+import re
+import shutil
 import tempfile
+import zlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -83,6 +86,8 @@ def build_xmltv(mappings: list[ChannelMapping], days: int, provider_factory: Cal
     })
     programme_count = 0
     errors: list[dict[str, str]] = []
+    coverage_starts: list[datetime] = []
+    coverage_ends: list[datetime] = []
     provider_cache: dict[str, Any] = {}
 
     for mapping in mappings:
@@ -98,7 +103,7 @@ def build_xmltv(mappings: list[ChannelMapping], days: int, provider_factory: Cal
             try:
                 programmes = provider.fetch_programmes(source.provider_channel_id, days=days)
             except Exception as exc:  # noqa: BLE001 - try next source
-                source_errors.append(f"{source.provider}:{source.provider_channel_id}: {type(exc).__name__}: {exc}")
+                source_errors.append(f"{source.provider}:{type(exc).__name__}")
                 continue
             for prog in programmes:
                 start = _xmltv_time(prog.get("start"))
@@ -106,6 +111,8 @@ def build_xmltv(mappings: list[ChannelMapping], days: int, provider_factory: Cal
                 title = prog.get("title") or "No Program Information available"
                 if not start or not stop:
                     continue
+                coverage_starts.append(datetime.strptime(start, "%Y%m%d%H%M%S %z"))
+                coverage_ends.append(datetime.strptime(stop, "%Y%m%d%H%M%S %z"))
                 node = ET.SubElement(tv, "programme", {"start": start, "stop": stop, "channel": mapping.channel_id})
                 ET.SubElement(node, "title", {"lang": "de"}).text = title
                 if prog.get("subtitle"):
@@ -119,7 +126,14 @@ def build_xmltv(mappings: list[ChannelMapping], days: int, provider_factory: Cal
 
     tree = ET.ElementTree(tv)
     ET.indent(tree, space="  ")
-    return tree, {"channel_count": len(mappings), "programme_count": programme_count, "error_count": len(errors), "errors": errors}
+    return tree, {
+        "channel_count": len(mappings),
+        "programme_count": programme_count,
+        "error_count": len(errors),
+        "errors": errors,
+        "coverage_start": min(coverage_starts).isoformat() if coverage_starts else None,
+        "coverage_end": max(coverage_ends).isoformat() if coverage_ends else None,
+    }
 
 
 def generate_xmltv(
@@ -134,12 +148,28 @@ def generate_xmltv(
     gzip_output = bool(settings.get("gzip_output", True))
     mappings = parse_mapping_config(settings.get("mapping_config_json", "[]"))
     tree, report = build_xmltv(mappings, days=days, provider_factory=provider_factory)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_xml_tree_atomic(tree, output_path)
-    gz_path = None
-    if gzip_output:
-        gz_path = output_path.with_suffix(output_path.suffix + ".gz")
-        _write_gzip_atomic(gz_path, output_path.read_bytes())
+    # Failed fetches and malformed/empty programme payloads must not replace
+    # a previously usable guide. A genuinely empty schedule is still valid.
+    if report["error_count"]:
+        return {
+            "status": "error",
+            "message": f"refresh failed for {report['error_count']} channel(s); existing output preserved",
+            "output_path": str(output_path),
+            "gzip_path": str(output_path.with_suffix(output_path.suffix + ".gz")) if gzip_output else None,
+            **report,
+            "errors": [{"channel_id": error["channel_id"], "error": sanitize_error_text(error["error"])} for error in report["errors"]],
+        }
+    gz_path = output_path.with_suffix(output_path.suffix + ".gz") if gzip_output else None
+    # No usable mappings must never wipe an existing non-empty guide.
+    if report["channel_count"] == 0 and report["programme_count"] == 0 and (_has_guide_content(output_path) or (gz_path is not None and _has_guide_content(gz_path))):
+        return {
+            "status": "error",
+            "message": "generation blocked: zero usable mappings would overwrite existing non-empty output; existing output preserved",
+            "output_path": str(output_path),
+            "gzip_path": str(gz_path) if gz_path else None,
+            **report,
+        }
+    _publish_outputs(tree, output_path, gz_path)
     logger.info("epgforgearr generated %s programmes for %s channels", report["programme_count"], report["channel_count"])
     return {
         "status": "ok" if report["error_count"] == 0 else "warning",
@@ -150,8 +180,32 @@ def generate_xmltv(
     }
 
 
-def _write_xml_tree_atomic(tree: ET.ElementTree, output_path: Path) -> None:
-    """Write XMLTV via same-directory replace to survive stale root-owned files."""
+def _has_guide_content(path: Path) -> bool:
+    try:
+        if path.suffix == ".gz":
+            with gzip.open(path, "rb") as handle:
+                data = handle.read()
+        else:
+            data = path.read_bytes()
+    except (OSError, EOFError, zlib.error):
+        return False
+    return b"<channel" in data or b"<programme" in data
+
+
+def sanitize_error_text(message: Any) -> str:
+    """Remove URLs and credential-like values before an error is persisted or logged."""
+    text = str(message or "")
+    text = re.sub(r"(?i)https?://[^\s\"'<>]+", "<URL REDACTED>", text)
+    text = re.sub(
+        r"(?i)\b(authorization|proxy-authorization|token|password|passwd|secret|api[_-]?key|signature|sig|cookie)\s*[:=]\s*(?:Bearer\s+)?[^\s,;]+",
+        r"\1=REDACTED",
+        text,
+    )
+    text = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer REDACTED", text)
+    return re.sub(r"\b[A-Za-z0-9_-]{32,}\b", "REDACTED", text)
+
+
+def _stage_xml_tree(tree: ET.ElementTree, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent)
     tmp_path = Path(tmp_name)
@@ -159,26 +213,84 @@ def _write_xml_tree_atomic(tree: ET.ElementTree, output_path: Path) -> None:
         with os.fdopen(fd, "wb") as file:
             tree.write(file, encoding="utf-8", xml_declaration=True)
         os.chmod(tmp_path, 0o664)
-        os.replace(tmp_path, output_path)
+        return tmp_path
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
 
 
-def _write_gzip_atomic(gz_path: Path, payload: bytes) -> None:
-    """Write gzip via same-directory replace to avoid existing-file permissions."""
-    gz_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{gz_path.name}.", suffix=".tmp", dir=gz_path.parent)
+def _stage_gzip_file(source_path: Path, gzip_path: Path) -> Path:
+    gzip_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{gzip_path.name}.", suffix=".tmp", dir=gzip_path.parent)
     tmp_path = Path(tmp_name)
     try:
-        with os.fdopen(fd, "wb") as raw:
-            with gzip.GzipFile(fileobj=raw, mode="wb") as file:
-                file.write(payload)
+        with os.fdopen(fd, "wb") as raw, source_path.open("rb") as source:
+            with gzip.GzipFile(fileobj=raw, mode="wb") as compressed:
+                shutil.copyfileobj(source, compressed)
         os.chmod(tmp_path, 0o664)
-        os.replace(tmp_path, gz_path)
+        return tmp_path
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def _stage_backup(path: Path) -> Path | None:
+    """Copy an existing file to a same-directory temp file, keeping its mode."""
+    if not path.exists():
+        return None
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.backup.", suffix=".tmp", dir=path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as backup, path.open("rb") as source:
+            shutil.copyfileobj(source, backup)
+        os.chmod(tmp_path, path.stat().st_mode & 0o777)
+        return tmp_path
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def _publish_outputs(tree: ET.ElementTree, output_path: Path, gzip_path: Path | None) -> None:
+    """Stage both outputs and roll XML back if publishing the gzip file fails.
+
+    The old XML is backed up before anything is published, so rollback is a
+    single rename that writes no new bytes. A backup is kept if rollback fails.
+    """
+    xml_tmp = _stage_xml_tree(tree, output_path)
+    gzip_tmp = None
+    backup = None
+    keep_backup = False
+    try:
+        backup = _stage_backup(output_path)
+        if gzip_path is not None:
+            gzip_tmp = _stage_gzip_file(xml_tmp, gzip_path)
+        os.replace(xml_tmp, output_path)
+        xml_tmp = None
+        if gzip_path is not None and gzip_tmp is not None:
+            try:
+                os.replace(gzip_tmp, gzip_path)
+                gzip_tmp = None
+            except Exception as exc:
+                try:
+                    if backup is not None:
+                        os.replace(backup, output_path)
+                        backup = None
+                    else:
+                        output_path.unlink(missing_ok=True)
+                except Exception as rollback_exc:
+                    keep_backup = True
+                    where = f"old XML preserved at {backup}" if backup is not None else f"new XML left at {output_path}"
+                    raise RuntimeError(
+                        f"gzip publish failed ({type(exc).__name__}: {exc}) and XML rollback failed "
+                        f"({type(rollback_exc).__name__}: {rollback_exc}); {where}; restore it manually"
+                    ) from exc
+                raise
+    finally:
+        for leftover in (xml_tmp, gzip_tmp):
+            if leftover is not None:
+                leftover.unlink(missing_ok=True)
+        if backup is not None and not keep_backup:
+            backup.unlink(missing_ok=True)
 
 
 def _xmltv_time(value: Any) -> str | None:

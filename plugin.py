@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 try:
-    from .epgforgearr.generator import generate_xmltv, parse_mapping_config, supported_sources
+    from .epgforgearr.generator import generate_xmltv, parse_mapping_config, sanitize_error_text, supported_sources
     from .epgforgearr.workflow import (
         export_mapping_template,
         generate_all_provider_sources,
@@ -35,7 +35,7 @@ except ImportError:  # standalone tests
         for _name in list(sys.modules):
             if _name == "epgforgearr" or _name.startswith("epgforgearr."):
                 sys.modules.pop(_name, None)
-    from epgforgearr.generator import generate_xmltv, parse_mapping_config, supported_sources
+    from epgforgearr.generator import generate_xmltv, parse_mapping_config, sanitize_error_text, supported_sources
     from epgforgearr.workflow import (
         export_mapping_template,
         generate_all_provider_sources,
@@ -100,8 +100,8 @@ def _load_settings() -> dict:
         cfg = PluginConfig.objects.filter(key=PLUGIN_KEY).first()
         if cfg and isinstance(cfg.settings, dict):
             return _merge_defaults(dict(cfg.settings))
-    except Exception:
-        _logger.exception("epgforgearr: failed to load plugin settings from DB")
+    except Exception as exc:
+        _logger.error("epgforgearr: failed to load plugin settings from DB (%s)", type(exc).__name__)
     return _merge_defaults({})
 
 
@@ -165,6 +165,49 @@ def _release_job_lock(path: str) -> None:
         os.unlink(path)
     except FileNotFoundError:
         pass
+
+
+def _sanitize_health_message(value: Any) -> str:
+    return sanitize_error_text(value)
+
+
+def _sanitize_health_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _sanitize_health_message(value)
+    if isinstance(value, dict):
+        return {_sanitize_health_message(key): _sanitize_health_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_health_value(item) for item in value]
+    return value
+
+
+def _provider_health_results(results: dict, previous: dict, now: int) -> dict:
+    previous = previous if isinstance(previous, dict) else {}
+    health = {
+        provider_id: {**_sanitize_health_value(old), "observed_in_last_attempt": False}
+        for provider_id, old in previous.items()
+        if isinstance(old, dict)
+    }
+    for provider_id, result in results.items():
+        old = previous.get(provider_id, {})
+        old = old if isinstance(old, dict) else {}
+        generated = result.get("generated", {})
+        success = result.get("status") == "ok" and generated.get("error_count", 0) == 0
+        safe_result = _sanitize_health_value(result)
+        coverage = None
+        if success and (generated.get("coverage_start") or generated.get("coverage_end")):
+            coverage = {"start": generated.get("coverage_start"), "end": generated.get("coverage_end")}
+        health[provider_id] = {
+            **safe_result,
+            "last_attempt_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "last_success_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)) if success else old.get("last_success_at"),
+            "coverage_window": coverage if success else old.get("coverage_window"),
+            "channel_count": generated.get("channel_count", old.get("channel_count")) if success else old.get("channel_count"),
+            "programme_count": generated.get("programme_count", old.get("programme_count")) if success else old.get("programme_count"),
+            "error": None if success else _sanitize_health_message(result.get("message")),
+            "observed_in_last_attempt": True,
+        }
+    return health
 
 
 def compute_scheduler_status(
@@ -233,18 +276,22 @@ def _scheduled_job() -> dict:
             # poll tick retries soon instead of waiting a full day.
             state.update({
                 "last_full_refresh_status": "error",
-                "last_full_refresh_error": str(result.get("message")),
-                "providers": result.get("providers", {}),
+                "last_full_refresh_error": _sanitize_health_message(result.get("message")),
+                "last_full_refresh_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                "last_summary": _sanitize_health_message(result.get("message")),
+                "providers": _provider_health_results(result.get("providers", {}), state.get("providers", {}), now),
             })
             _save_state(settings, state)
-            return {"status": "error", "message": f"full refresh failed: {result.get('message')}"}
+            return {"status": "error", "message": f"full refresh failed: {_sanitize_health_message(result.get('message'))}"}
         state.update({
-            "last_full_refresh": now,
             "last_full_refresh_status": result.get("status"),
-            "last_full_refresh_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "last_summary": result.get("message"),
-            "providers": result.get("providers", {}),
+            "last_full_refresh_error": None if result.get("status") == "ok" else _sanitize_health_message(result.get("message")),
+            "last_full_refresh_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "last_summary": _sanitize_health_message(result.get("message")),
+            "providers": _provider_health_results(result.get("providers", {}), state.get("providers", {}), now),
         })
+        if result.get("status") == "ok":
+            state["last_full_refresh"] = now
         _save_state(settings, state)
         return {"status": "ok", "message": state["last_summary"]}
     finally:
@@ -268,15 +315,15 @@ def _scheduler_loop() -> None:
         except ImportError as exc:
             _logger.info("epgforgearr scheduler exiting after plugin reload: %s", exc)
             return
-        except Exception:
-            _logger.exception("epgforgearr scheduler tick failed")
+        except Exception as exc:
+            _logger.error("epgforgearr scheduler tick failed (%s)", type(exc).__name__)
         finally:
             try:
                 from django.db import close_old_connections
 
                 close_old_connections()
-            except Exception:
-                _logger.exception("epgforgearr scheduler could not close its database connection")
+            except Exception as exc:
+                _logger.error("epgforgearr scheduler could not close its database connection (%s)", type(exc).__name__)
         _scheduler_stop.wait(SCHEDULER_POLL_SECONDS)
     _logger.info("epgforgearr self-scheduler stopped")
 
@@ -339,8 +386,8 @@ class Plugin:
         try:
             _stop_superseded_schedulers()
             _start_scheduler()
-        except Exception:
-            _logger.exception("epgforgearr: could not start persisted scheduler")
+        except Exception as exc:
+            _logger.error("epgforgearr: could not start persisted scheduler (%s)", type(exc).__name__)
 
     def run(self, action: str, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         logger = context.get("logger") or logging.getLogger(__name__)
@@ -395,8 +442,8 @@ class Plugin:
                 return generate_all_provider_sources(settings, logger=logger)
             return {"status": "error", "message": f"Unknown action: {action}"}
         except Exception as exc:  # noqa: BLE001 - plugin boundary should report typed failure
-            logger.exception("epgforgearr: action failed")
-            return {"status": "error", "message": f"{action} failed: {type(exc).__name__}: {exc}"}
+            logger.error("epgforgearr: action %s failed (%s)", action, type(exc).__name__)
+            return {"status": "error", "message": f"{action} failed ({type(exc).__name__}); details redacted"}
 
 
 def _settings_from_context_and_params(context: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:

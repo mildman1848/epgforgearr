@@ -79,3 +79,109 @@ def test_scheduled_job_skips_when_not_due_yet(tmp_path, monkeypatch):
     monkeypatch.setattr(plugin, "_load_state", lambda _settings: {"last_full_refresh": int(time.time())})
     result = plugin._scheduled_job()
     assert result == {"status": "ok", "message": "not due yet"}
+
+
+def test_provider_health_uses_real_coverage_and_preserves_last_success():
+    old = {
+        "magenta": {
+            "last_success_at": "2025-01-01T00:00:00Z",
+            "coverage_window": {"start": "2025-01-01T02:00:00+00:00", "end": "2025-01-02T02:00:00+00:00"},
+            "channel_count": 12,
+            "programme_count": 240,
+        },
+        "tvdigital_de": {"status": "ok", "last_success_at": "2025-01-01T00:00:00Z"},
+    }
+    health = plugin._provider_health_results(
+        {
+            "magenta": {
+                "status": "ok",
+                "message": "ok",
+                "generated": {
+                    "error_count": 0,
+                    "channel_count": 15,
+                    "programme_count": 300,
+                    "coverage_start": "2025-02-01T01:00:00+00:00",
+                    "coverage_end": "2025-02-03T01:00:00+00:00",
+                },
+            }
+        },
+        old,
+        1738368000,
+    )
+    succeeded = health["magenta"]
+    assert health["tvdigital_de"]["observed_in_last_attempt"] is False
+    assert succeeded["observed_in_last_attempt"] is True
+    assert succeeded["coverage_window"] == {
+        "start": "2025-02-01T01:00:00+00:00",
+        "end": "2025-02-03T01:00:00+00:00",
+    }
+    assert succeeded["channel_count"] == 15
+    assert succeeded["programme_count"] == 300
+    assert succeeded["last_success_at"] == "2025-02-01T00:00:00Z"
+
+    failed = plugin._provider_health_results(
+        {
+            "magenta": {
+                "status": "error",
+                "message": "request failed token=do-not-leak https://example.invalid/path?sig=do-not-leak-either",
+                "generated": {"error_count": 1, "errors": [{"error": "token=do-not-leak"}]},
+            }
+        },
+        {"magenta": succeeded},
+        1738454400,
+    )["magenta"]
+    persisted = str(failed)
+    assert "do-not-leak" not in persisted
+    assert "https://" not in persisted
+    assert failed["last_success_at"] == succeeded["last_success_at"]
+    assert failed["coverage_window"] == succeeded["coverage_window"]
+    assert failed["channel_count"] == succeeded["channel_count"]
+    assert failed["programme_count"] == succeeded["programme_count"]
+    assert failed["last_attempt_at"] == "2025-02-02T00:00:00Z"
+
+
+def test_failed_scheduled_refresh_persists_sanitized_health_and_keeps_success(tmp_path, monkeypatch):
+    settings = {"schedule_enabled": True, "data_dir": str(tmp_path / "data")}
+    previous = {
+        "last_full_refresh": 1,
+        "providers": {
+            "magenta": {
+                "last_success_at": "2025-01-01T00:00:00Z",
+                "coverage_window": {"start": "2025-01-01T01:00:00+00:00", "end": "2025-01-02T01:00:00+00:00"},
+                "channel_count": 4,
+                "programme_count": 80,
+            }
+        },
+    }
+    saved: dict = {}
+    monkeypatch.setattr(plugin, "_load_settings", lambda: settings)
+    monkeypatch.setattr(plugin, "_load_state", lambda _settings: dict(previous))
+    monkeypatch.setattr(plugin, "_save_state", lambda _settings, state: saved.update(state))
+    monkeypatch.setattr(plugin, "_job_lock", lambda _name: "test-lock")
+    monkeypatch.setattr(plugin, "_release_job_lock", lambda _path: None)
+    monkeypatch.setattr(
+        plugin,
+        "generate_all_provider_sources",
+        lambda _settings: {
+            "status": "error",
+            "message": "refresh failed token=do-not-persist https://example.invalid/signed/path?sig=do-not-persist",
+            "providers": {
+                "magenta": {
+                    "status": "error",
+                    "message": "refresh failed token=do-not-persist https://example.invalid/signed/path?sig=do-not-persist",
+                    "generated": {"error_count": 1, "errors": [{"error": "token=do-not-persist"}]},
+                }
+            },
+        },
+    )
+
+    result = plugin._scheduled_job()
+
+    assert result["status"] == "error"
+    assert "do-not-persist" not in str(result)
+    assert "https://" not in str(result)
+    assert "do-not-persist" not in str(saved)
+    assert "https://" not in str(saved)
+    assert saved["last_full_refresh"] == previous["last_full_refresh"]
+    assert saved["providers"]["magenta"]["last_success_at"] == "2025-01-01T00:00:00Z"
+    assert saved["providers"]["magenta"]["programme_count"] == 80
