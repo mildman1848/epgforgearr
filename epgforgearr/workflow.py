@@ -85,32 +85,58 @@ class ScanItem:
     candidates: tuple[Candidate, ...]
 
 
-def scan_missing_epg(settings: dict[str, Any], logger: logging.Logger | None = None) -> dict[str, Any]:
+def scan_missing_epg(
+    settings: dict[str, Any],
+    logger: logging.Logger | None = None,
+    provider_factory: Callable[[str], Any] | None = None,
+) -> dict[str, Any]:
     """Scan Dispatcharr channels/streams and write reviewable EPG suggestions.
 
-    The scanner is intentionally conservative. It prefers user-managed Channels
-    linked to Kodiboxarr streams and avoids auto-applying low confidence matches.
+    Candidates are searched in every usable provider channel list. The scanner
+    is intentionally conservative: matching is exact/normalized per provider
+    (never fuzzy across providers), and low confidence matches are never
+    auto-selected. `provider_factory` is injectable for tests.
     """
     logger = logger or logging.getLogger(__name__)
+    provider_factory = provider_factory or default_registry.create
     confidence_min = str(settings.get("scan_min_confidence") or "medium").lower()
     include_existing = bool(settings.get("scan_include_existing_epg", False))
     suggestions_path = Path(str(settings.get("suggestions_path") or DEFAULT_SUGGESTIONS_PATH))
 
     rows = _dispatcharr_kodibox_rows(include_existing=include_existing)
-    # Scan heuristics below (name normalization, sport-number matching) are
-    # Magenta-specific; the registry lookup just avoids a second hardcoded
-    # constructor call alongside generate_full_provider_epg.
-    provider = default_registry.create("magenta")
-    magenta_channels = provider.list_channels()
-    magenta_index = _index_magenta_channels(magenta_channels)
+    provider_ids = usable_provider_ids()
+    indexes: dict[str, dict[str, Any]] = {}
+    coverage: dict[str, dict[str, Any]] = {}
+    for provider_id in provider_ids:
+        try:
+            channels = provider_factory(provider_id).list_channels()
+        except Exception as exc:  # noqa: BLE001 - one broken provider must not block the others
+            logger.error("epgforgearr scan: provider %s channel list failed (%s)", provider_id, type(exc).__name__)
+            coverage[provider_id] = {"status": "error", "error": type(exc).__name__, "provider_channels": 0,
+                                     "streams_with_candidate": 0, "streams_top_candidate": 0}
+            continue
+        indexes[provider_id] = _index_provider_channels(channels)
+        coverage[provider_id] = {"status": "ok", "provider_channels": len(indexes[provider_id]["rows"]),
+                                 "streams_with_candidate": 0, "streams_top_candidate": 0}
 
     items: list[ScanItem] = []
     for row in rows:
-        candidates = tuple(_suggest_candidates(row["stream_name"], row.get("stream_tvg_id") or row.get("tvg_id") or "", magenta_index))
-        candidates = tuple(c for c in candidates if _confidence_rank(c.confidence) >= _confidence_rank(confidence_min))
+        tvg = row.get("stream_tvg_id") or row.get("tvg_id") or ""
+        all_candidates: list[Candidate] = []
+        for provider_id, index in indexes.items():
+            all_candidates.extend(_suggest_candidates(row["stream_name"], tvg, index, provider_id))
+        candidates = tuple(
+            c for c in _rank_candidates(all_candidates, provider_ids)
+            if _confidence_rank(c.confidence) >= _confidence_rank(confidence_min)
+        )
         if not candidates:
             continue
-        selected = bool(settings.get("scan_auto_select", False)) and candidates[0].confidence in {"exact", "high", "medium"}
+        for provider_id in {c.provider for c in candidates}:
+            coverage[provider_id]["streams_with_candidate"] += 1
+        coverage[candidates[0].provider]["streams_top_candidate"] += 1
+        # An unambiguous top candidate only: a tie between providers needs a human.
+        tied = len(candidates) > 1 and (candidates[0].confidence, candidates[0].priority) == (candidates[1].confidence, candidates[1].priority)
+        selected = bool(settings.get("scan_auto_select", False)) and not tied and candidates[0].confidence in {"exact", "high", "medium"}
         items.append(
             ScanItem(
                 channel_id=_mapping_channel_id(row),
@@ -137,8 +163,17 @@ def scan_missing_epg(settings: dict[str, Any], logger: logging.Logger | None = N
         "counts": {
             "scanned_channels": len(rows),
             "suggested_channels": len(items),
+            "unmatched_channels": len(rows) - len(items),
             "selected_by_default": sum(1 for item in items if item.selected),
-            "magenta_channels": len(magenta_channels),
+            "magenta_channels": coverage.get("magenta", {}).get("provider_channels", 0),
+        },
+        # Mapping coverage (provider channel lists vs. scanned streams). This says
+        # nothing about programme availability; it is not fetched during a scan.
+        "provider_coverage": coverage,
+        # Stream availability is reported separately from EPG mapping coverage.
+        "stream_availability": {
+            "scanned_streams": len(rows),
+            "streams_with_existing_epg": sum(1 for row in rows if row.get("existing_epg")),
         },
         "items": [_scan_item_to_dict(item) for item in items],
     }
@@ -149,6 +184,8 @@ def scan_missing_epg(settings: dict[str, Any], logger: logging.Logger | None = N
         "message": f"scan complete: {len(items)} suggestion(s), {payload['counts']['selected_by_default']} selected by default",
         "suggestions_path": str(suggestions_path),
         **payload["counts"],
+        "provider_coverage": coverage,
+        "stream_availability": payload["stream_availability"],
     }
 
 
@@ -490,7 +527,7 @@ def _import_refresh_task():
     return refresh_epg_data
 
 
-def _index_magenta_channels(channels: list[dict[str, Any]]) -> dict[str, Any]:
+def _index_provider_channels(channels: list[dict[str, Any]]) -> dict[str, Any]:
     rows: list[dict[str, str]] = []
     by_norm: dict[str, dict[str, str]] = {}
     sport_by_number: dict[str, dict[str, str]] = {}
@@ -508,7 +545,7 @@ def _index_magenta_channels(channels: list[dict[str, Any]]) -> dict[str, Any]:
     return {"rows": rows, "by_norm": by_norm, "sport_by_number": sport_by_number}
 
 
-def _suggest_candidates(stream_name: str, tvg_id: str, index: dict[str, Any]) -> list[Candidate]:
+def _suggest_candidates(stream_name: str, tvg_id: str, index: dict[str, Any], provider_id: str = "magenta") -> list[Candidate]:
     candidates: list[Candidate] = []
     norm_name = _norm(stream_name)
     norm_tvg = _norm(tvg_id)
@@ -516,21 +553,21 @@ def _suggest_candidates(stream_name: str, tvg_id: str, index: dict[str, Any]) ->
     for needle, reason_base in ((norm_name, "stream name exact"), (norm_tvg, "tvg-id exact")):
         if needle and needle in by_norm:
             row = by_norm[needle]
-            candidates.append(_candidate(row, "exact", reason_base, 1))
+            candidates.append(_candidate(provider_id, row, "exact", reason_base, 1))
 
-    number_match = re.search(r"\b(?:MAGENTA\s+)?(?:SPORT|FUSSBALL|BUNDESLIGA)\s*(\d+)\b", stream_name, flags=re.I)
+    number_match = provider_id == "magenta" and re.search(r"\b(?:MAGENTA\s+)?(?:SPORT|FUSSBALL|BUNDESLIGA)\s*(\d+)\b", stream_name, flags=re.I)
     if number_match:
         number = number_match.group(1)
         row = index["sport_by_number"].get(number)
         if row:
             confidence = "medium" if re.search(r"\bMAGENTA\s+SPORT\b", stream_name, flags=re.I) else "low"
-            candidates.append(_candidate(row, confidence, f"Magenta sports/event channel number {number} -> myTeamTV Sport {number}", 10 if confidence == "medium" else 30))
+            candidates.append(_candidate(provider_id, row, confidence, f"Magenta sports/event channel number {number} -> myTeamTV Sport {number}", 10 if confidence == "medium" else 30))
 
     # Conservative contains match: only for long names to avoid VOX/VOX UP style mistakes.
     if len(norm_name) >= 7:
         for row in index["rows"]:
             if norm_name in row["norm"] or row["norm"] in norm_name:
-                candidates.append(_candidate(row, "low", "normalized contains match", 50))
+                candidates.append(_candidate(provider_id, row, "low", "normalized contains match", 50))
                 break
 
     dedup: dict[tuple[str, str], Candidate] = {}
@@ -539,11 +576,18 @@ def _suggest_candidates(stream_name: str, tvg_id: str, index: dict[str, Any]) ->
         old = dedup.get(key)
         if old is None or candidate.priority < old.priority:
             dedup[key] = candidate
-    return sorted(dedup.values(), key=lambda c: (-_confidence_rank(c.confidence), c.priority, c.label))[:5]
+    return list(dedup.values())
 
 
-def _candidate(row: dict[str, str], confidence: str, reason: str, priority: int) -> Candidate:
-    return Candidate("magenta", row["content_id"], row["name"], confidence, reason, priority)
+def _rank_candidates(candidates: list[Candidate], provider_order: list[str]) -> list[Candidate]:
+    """Best confidence first, then priority, then registry order; at most 5 overall."""
+    order = {pid: i for i, pid in enumerate(provider_order)}
+    ranked = sorted(candidates, key=lambda c: (-_confidence_rank(c.confidence), c.priority, order.get(c.provider, len(order)), c.label))
+    return ranked[:5]
+
+
+def _candidate(provider_id: str, row: dict[str, str], confidence: str, reason: str, priority: int) -> Candidate:
+    return Candidate(provider_id, row["content_id"], row["name"], confidence, reason, priority)
 
 
 def _mapping_channel_id(row: dict[str, Any]) -> str:

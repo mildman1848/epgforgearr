@@ -49,7 +49,7 @@ Tracking: [#8](https://github.com/mildman1848/epgforgearr/issues/8)
 
 Local implementation is not yet released or deployed.
 
-### 3. Candidate search and coverage review — Next
+### 3. Candidate search and coverage review — In progress
 
 Tracking: [#9](https://github.com/mildman1848/epgforgearr/issues/9)
 
@@ -59,6 +59,9 @@ Tracking: [#9](https://github.com/mildman1848/epgforgearr/issues/9)
 - Report mapping coverage and programme availability per provider without
   conflating stream availability with EPG availability.
 - Keep manual mapping JSON workflow supported and backward compatible.
+- Implemented locally (unreleased): `scan_missing_epg` searches all usable
+  provider channel lists and reports `provider_coverage` (mapping coverage) apart
+  from `stream_availability`. Still open: per-provider programme availability.
 
 ### 4. Provider expansion — Later
 

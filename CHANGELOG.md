@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `scan_missing_epg` now searches all usable provider channel lists, ranks and
+  attributes candidates by provider, and reports mapping coverage separately
+  from existing stream EPG assignments. Ambiguous matches remain unselected;
+  provider-specific programme availability is not yet checked.
+- Added fixture-backed tests for cross-provider candidates, ranking, coverage,
+  provider failures, no-match behavior, and backwards-compatible mapping export.
+
 ## 0.3.7 — 2026-11-07
 
 - Failed provider refreshes (any channel error) no longer replace the last good

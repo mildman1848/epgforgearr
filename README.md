@@ -36,7 +36,10 @@ Recommended production-safe flow:
 
 1. `scan_missing_epg`
    - scans Dispatcharr streams/channels for EPG gaps
-   - fetches provider channel lists
+   - fetches the channel lists of all usable providers and ranks candidates by
+     confidence, with provider attribution and IDs
+   - reports `provider_coverage` (mapping coverage per provider) separately from
+     `stream_availability`; programme availability is not checked by the scan
    - writes review file: `/data/epgforgearr/review/suggestions.json`
 2. User review
    - edit `selected` per item
