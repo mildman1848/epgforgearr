@@ -38,6 +38,14 @@ def test_provider_profile_matches_magenta_and_tvdigital_defaults():
     assert tvdigital["epg_source_name"] == "EPGForgearr: TV Digital DE"
     assert tvdigital["epg_source_priority"] == 70
 
+    ewtn = provider_profile("ewtn_de")
+    assert ewtn["output_path"] == "/data/epgforgearr/ewtn-de-full.xml"
+    assert ewtn["epg_source_name"] == "EPGForgearr: EWTN Deutschland"
+
+    freeepg = provider_profile("freeepg_de")
+    assert freeepg["output_path"] == "/data/epgforgearr/freeepg-de-full.xml"
+    assert freeepg["epg_source_name"] == "EPGForgearr: FreeEPG Deutschland"
+
 
 def test_provider_profile_derives_defaults_for_unknown_provider():
     # Any future usable provider without an explicit profile entry still gets
@@ -70,6 +78,8 @@ def test_generate_all_provider_sources_generates_and_installs_each_usable_provid
     providers = {
         "magenta": RecordingProvider([{"contentId": "550", "name": "Sport 1"}]),
         "tvdigital_de": RecordingProvider([{"id": "37", "name": "Das Erste"}]),
+        "ewtn_de": RecordingProvider([{"id": "EWTN.de", "name": "EWTN Deutschland"}]),
+        "freeepg_de": RecordingProvider([{"id": "ARD.de", "name": "Das Erste"}]),
     }
     installed_calls: list[dict] = []
 
@@ -89,14 +99,18 @@ def test_generate_all_provider_sources_generates_and_installs_each_usable_provid
     result = generate_all_provider_sources(settings, provider_factory=lambda pid: providers[pid])
 
     assert result["status"] == "ok"
-    assert set(result["providers"].keys()) == {"magenta", "tvdigital_de"}
+    assert set(result["providers"].keys()) == {"magenta", "tvdigital_de", "ewtn_de", "freeepg_de"}
     assert "simpli_tv" not in result["providers"]
     assert (tmp_path / "magenta-full.xml").exists()
     assert (tmp_path / "tvdigital_de-full.xml").exists()
-    assert len(installed_calls) == 2
+    assert (tmp_path / "ewtn_de-full.xml").exists()
+    assert (tmp_path / "freeepg_de-full.xml").exists()
+    assert len(installed_calls) == 4
     assert {c["epg_source_name"] for c in installed_calls} == {
         "EPGForgearr: magenta",
         "EPGForgearr: tvdigital_de",
+        "EPGForgearr: ewtn_de",
+        "EPGForgearr: freeepg_de",
     }
 
 

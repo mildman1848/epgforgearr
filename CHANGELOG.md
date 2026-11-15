@@ -2,12 +2,22 @@
 
 ## Unreleased
 
+- Added `ewtn_de` from EWTN Deutschland's public daily programme pages and `freeepg_de` from FreeEPG's German XMLTV feed. Each gets its own selectable provider profile, XMLTV output and Dispatcharr EPGSource. FreeEPG's current German feed does not contain EWTN, so the direct EWTN adapter is still needed.
+- Provider instances are now cached once per XMLTV build, avoiding repeated feed downloads for multi-channel providers.
+
 - `scan_missing_epg` now searches all usable provider channel lists, ranks and
   attributes candidates by provider, and reports mapping coverage separately
   from existing stream EPG assignments. Ambiguous matches remain unselected;
-  provider-specific programme availability is not yet checked.
+  the scan also reports cached `programme_availability` per provider (last-known
+  programme count, coverage window and last success from persisted scheduler
+  state; null when unknown, possibly stale, never fetched live).
 - Added fixture-backed tests for cross-provider candidates, ranking, coverage,
   provider failures, no-match behavior, and backwards-compatible mapping export.
+
+## 0.3.8 — 2026-11-15
+
+- Added `ewtn_de` and `freeepg_de` provider adapters with separate generated XMLTV outputs and Dispatcharr EPG sources.
+- Cached provider instances across channel mappings to avoid repeating provider initialization and feed downloads.
 
 ## 0.3.7 — 2026-11-07
 

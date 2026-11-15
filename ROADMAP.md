@@ -61,7 +61,9 @@ Tracking: [#9](https://github.com/mildman1848/epgforgearr/issues/9)
 - Keep manual mapping JSON workflow supported and backward compatible.
 - Implemented locally (unreleased): `scan_missing_epg` searches all usable
   provider channel lists and reports `provider_coverage` (mapping coverage) apart
-  from `stream_availability`. Still open: per-provider programme availability.
+  from `stream_availability`, plus cached per-provider `programme_availability`
+  (last-known count/window/success from persisted scheduler state; null when
+  unknown; no live fetch). Remaining: verify against a real instance before release.
 
 ### 4. Provider expansion — Later
 

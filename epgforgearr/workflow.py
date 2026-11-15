@@ -32,6 +32,16 @@ PROVIDER_PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
         "epg_source_name": "EPGForgearr: TV Digital DE",
         "epg_source_priority": 70,
     },
+    "ewtn_de": {
+        "output_path": str(DATA_DIR / "ewtn-de-full.xml"),
+        "epg_source_name": "EPGForgearr: EWTN Deutschland",
+        "epg_source_priority": 80,
+    },
+    "freeepg_de": {
+        "output_path": str(DATA_DIR / "freeepg-de-full.xml"),
+        "epg_source_name": "EPGForgearr: FreeEPG Deutschland",
+        "epg_source_priority": 90,
+    },
 }
 DEFAULT_PROVIDER_PRIORITY = 100
 
@@ -85,17 +95,41 @@ class ScanItem:
     candidates: tuple[Candidate, ...]
 
 
+def _programme_availability(provider_ids: list[str], state: dict[str, Any] | None) -> dict[str, Any]:
+    """Cached per-provider programme figures; null (never 0) when no success is persisted."""
+    state = state if isinstance(state, dict) else {}
+    report: dict[str, Any] = {}
+    for provider_id in provider_ids:
+        saved = state.get(provider_id)
+        saved = saved if isinstance(saved, dict) else {}
+        known = bool(saved.get("last_success_at"))
+        report[provider_id] = {
+            "source": "persisted_scheduler_state",
+            "cached": True,  # may be stale: reflects the last scheduler refresh, not this scan
+            "known": known,
+            "last_success_at": saved.get("last_success_at") if known else None,
+            "last_attempt_at": saved.get("last_attempt_at"),
+            "last_status": saved.get("status"),
+            "programme_count": saved.get("programme_count") if known else None,
+            "coverage_window": saved.get("coverage_window") if known else None,
+        }
+    return report
+
+
 def scan_missing_epg(
     settings: dict[str, Any],
     logger: logging.Logger | None = None,
     provider_factory: Callable[[str], Any] | None = None,
+    provider_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Scan Dispatcharr channels/streams and write reviewable EPG suggestions.
 
     Candidates are searched in every usable provider channel list. The scanner
     is intentionally conservative: matching is exact/normalized per provider
     (never fuzzy across providers), and low confidence matches are never
-    auto-selected. `provider_factory` is injectable for tests.
+    auto-selected. `provider_factory` is injectable for tests. `provider_state` is
+    the persisted scheduler `providers` health dict, used read-only for the cached
+    `programme_availability` report (no schedules are fetched by the scan).
     """
     logger = logger or logging.getLogger(__name__)
     provider_factory = provider_factory or default_registry.create
@@ -170,6 +204,8 @@ def scan_missing_epg(
         # Mapping coverage (provider channel lists vs. scanned streams). This says
         # nothing about programme availability; it is not fetched during a scan.
         "provider_coverage": coverage,
+        # Last-known programme availability from persisted scheduler state only.
+        "programme_availability": _programme_availability(provider_ids, provider_state),
         # Stream availability is reported separately from EPG mapping coverage.
         "stream_availability": {
             "scanned_streams": len(rows),
@@ -185,6 +221,7 @@ def scan_missing_epg(
         "suggestions_path": str(suggestions_path),
         **payload["counts"],
         "provider_coverage": coverage,
+        "programme_availability": payload["programme_availability"],
         "stream_availability": payload["stream_availability"],
     }
 

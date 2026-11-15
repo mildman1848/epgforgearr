@@ -414,7 +414,9 @@ class Plugin:
                 mappings = parse_mapping_config(settings.get("mapping_config_json", "[]"))
                 return {"status": "ok", "message": f"mapping valid: {len(mappings)} channel(s)", "channel_count": len(mappings)}
             if action == "scan_missing_epg":
-                return scan_missing_epg(settings, logger=logger)
+                return scan_missing_epg(
+                    settings, logger=logger, provider_state=_load_state(_load_settings()).get("providers")
+                )
             if action == "export_mapping_template":
                 return export_mapping_template(settings, logger=logger)
             if action == "generate_epg":

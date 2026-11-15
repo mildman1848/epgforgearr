@@ -99,7 +99,9 @@ def build_xmltv(mappings: list[ChannelMapping], days: int, provider_factory: Cal
     for mapping in mappings:
         source_errors: list[str] = []
         for source in mapping.sources:
-            provider = provider_cache.setdefault(source.provider, provider_factory(source.provider))
+            if source.provider not in provider_cache:
+                provider_cache[source.provider] = provider_factory(source.provider)
+            provider = provider_cache[source.provider]
             try:
                 programmes = provider.fetch_programmes(source.provider_channel_id, days=days)
             except Exception as exc:  # noqa: BLE001 - try next source

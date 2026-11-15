@@ -3,6 +3,8 @@ from __future__ import annotations
 from .magenta import MagentaProvider
 from .registry import ProviderRegistry
 from .tvdigital import TvDigitalProvider
+from .ewtn import EwtnProvider
+from .freeepg import FreeEpgProvider
 
 # Single shared registry for the plugin. Adding a new source beyond Magenta
 # means registering it here (or via default_registry.register(...) from a
@@ -25,6 +27,22 @@ default_registry.register(
     supports=["channel_list", "programme_fetch"],
     notes="Direct adapter for the mobile.tvdigital.de upstream source Michaz uses; does not consume Michaz's generated XMLTV.",
 )
+default_registry.register(
+    "ewtn_de",
+    EwtnProvider,
+    label="EWTN Deutschland",
+    status="implemented",
+    supports=["channel_list", "programme_fetch"],
+    notes="Programme from EWTN's public daily schedule pages; schedule markup is not a formal API.",
+)
+default_registry.register(
+    "freeepg_de",
+    FreeEpgProvider,
+    label="FreeEPG Deutschland",
+    status="implemented",
+    supports=["channel_list", "programme_fetch"],
+    notes="Free XMLTV feed for Germany from free-epg.de; separate source, refreshed on generation.",
+)
 default_registry.register_planned(
     "simpli_tv",
     label="SimpliTV / PULS24 AT",
@@ -32,4 +50,4 @@ default_registry.register_planned(
     notes="Planned direct adapter for Austrian guide data, using source endpoints directly.",
 )
 
-__all__ = ["ProviderRegistry", "default_registry", "MagentaProvider", "TvDigitalProvider"]
+__all__ = ["ProviderRegistry", "default_registry", "MagentaProvider", "TvDigitalProvider", "EwtnProvider", "FreeEpgProvider"]

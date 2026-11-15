@@ -25,11 +25,12 @@ def _row(stream_id, name, existing=False):
             "linked_channel": True}
 
 
-def _scan(tmp_path, monkeypatch, rows, providers, **settings):
+def _scan(tmp_path, monkeypatch, rows, providers, provider_state=None, **settings):
     monkeypatch.setattr(workflow, "_dispatcharr_kodibox_rows", lambda include_existing: rows)
     monkeypatch.setattr(workflow, "usable_provider_ids", lambda: list(providers))
     path = tmp_path / "suggestions.json"
-    result = scan_missing_epg({"suggestions_path": str(path), **settings}, provider_factory=lambda pid: providers[pid])
+    result = scan_missing_epg({"suggestions_path": str(path), **settings}, provider_factory=lambda pid: providers[pid],
+                          provider_state=provider_state)
     return result, json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -101,3 +102,33 @@ def test_magenta_sport_heuristic_is_not_applied_to_other_providers(tmp_path, mon
     providers = {"magenta": FakeLister(other), "tvdigital_de": FakeLister(other)}
     _, payload = _scan(tmp_path, monkeypatch, [_row(1, "Sport 1")], providers, scan_min_confidence="low")
     assert [(c["provider"], c["confidence"]) for c in payload["items"][0]["candidates"]] == [("magenta", "low")]
+
+
+def test_programme_availability_unknown_without_state(tmp_path, monkeypatch):
+    providers = {"magenta": FakeLister(MAGENTA)}
+    result, payload = _scan(tmp_path, monkeypatch, [_row(1, "ZDF")], providers)
+    pa = payload["programme_availability"]["magenta"]
+    assert pa["known"] is False and pa["cached"] is True
+    assert pa["programme_count"] is None and pa["coverage_window"] is None and pa["last_success_at"] is None
+    assert result["programme_availability"] == payload["programme_availability"]
+
+
+def test_programme_availability_from_state_is_distinct_and_kept_after_failure(tmp_path, monkeypatch):
+    window = {"start": "2025-01-01T00:00:00+00:00", "end": "2025-01-03T00:00:00+00:00"}
+    state = {
+        "magenta": {"status": "ok", "last_success_at": "2025-01-01T00:00:00Z", "last_attempt_at": "2025-01-01T00:00:00Z",
+                    "programme_count": 300, "coverage_window": window},
+        # failed refresh after an earlier success: last-known values retained by the scheduler
+        "tvdigital_de": {"status": "error", "last_success_at": "2024-12-31T00:00:00Z",
+                         "last_attempt_at": "2025-01-01T00:00:00Z", "programme_count": 80, "coverage_window": window},
+    }
+    providers = {"magenta": FakeLister(MAGENTA), "tvdigital_de": FakeLister(TVDIGITAL), "other": FakeLister([])}
+    _, payload = _scan(tmp_path, monkeypatch, [_row(1, "ZDF")], providers, provider_state=state)
+    pa = payload["programme_availability"]
+    assert pa["magenta"]["programme_count"] == 300 and pa["magenta"]["coverage_window"] == window
+    assert pa["tvdigital_de"]["last_status"] == "error" and pa["tvdigital_de"]["programme_count"] == 80
+    assert pa["other"]["programme_count"] is None
+    # mapping coverage and stream availability are untouched by programme data
+    assert payload["provider_coverage"]["magenta"]["provider_channels"] == 2
+    assert "programme_count" not in payload["provider_coverage"]["magenta"]
+    assert payload["stream_availability"] == {"scanned_streams": 1, "streams_with_existing_epg": 0}

@@ -16,6 +16,8 @@ No Dispatcharr Channels are created automatically. Channel creation and stream l
 |---|---|---|---|
 | `magenta` | Magenta TV EPG direct API | implemented | `/data/epgforgearr/magenta-full.xml(.gz)` |
 | `tvdigital_de` | TV Digital DE direct API | implemented | `/data/epgforgearr/tvdigital-de-full.xml(.gz)` |
+| `ewtn_de` | EWTN Deutschland public daily schedule | implemented | `/data/epgforgearr/ewtn-de-full.xml(.gz)` |
+| `freeepg_de` | FreeEPG Germany XMLTV feed | implemented | `/data/epgforgearr/freeepg-de-full.xml(.gz)` |
 | `simpli_tv` | SimpliTV / PULS24 AT | planned | not generated yet |
 
 Michaz' public EPG scripts are used as endpoint/field references only. EPGForgearr does **not** consume Michaz-generated aggregate XMLTV as a provider.
@@ -25,6 +27,8 @@ Michaz' public EPG scripts are used as endpoint/field references only. EPGForgea
 - **Dispatcharr:** [Dispatcharr/Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) — host application and plugin integration.
 - **Magenta TV:** provider API adapter implemented by EPGForgearr; independent of the provider.
 - **TV Digital DE:** [TV Digital](https://www.tvdigital.de/) — guide data provider accessed through its public service API.
+- **EWTN Deutschland:** [EWTN Programm](https://ewtn.de/programm/) — public day pages, read directly; no formal programme API is documented.
+- **FreeEPG:** [free-epg.de](https://free-epg.de/countries/de) — free XMLTV feed for Germany; its current channel list does not include EWTN.
 - **EPG reference scripts:** [michaz1988/michaz1988.github.io](https://github.com/michaz1988/michaz1988.github.io/tree/main/.epg) — endpoint/field reference only; generated aggregate XMLTV is not consumed as a provider.
 - **Related stream plugin:** [Kodiboxarr](https://github.com/mildman1848/kodiboxarr) imports streams separately; EPGForgearr also works as a standalone supplemental EPG plugin.
 
@@ -39,7 +43,11 @@ Recommended production-safe flow:
    - fetches the channel lists of all usable providers and ranks candidates by
      confidence, with provider attribution and IDs
    - reports `provider_coverage` (mapping coverage per provider) separately from
-     `stream_availability`; programme availability is not checked by the scan
+     `stream_availability`; adds `programme_availability` per provider (last-known
+     `programme_count`, `coverage_window`, `last_success_at`, `last_status`) read
+     from the persisted scheduler state only. It is cached and may be stale, is
+     `null`/`known: false` when no successful refresh is persisted, and the scan
+     never fetches schedules
    - writes review file: `/data/epgforgearr/review/suggestions.json`
 2. User review
    - edit `selected` per item

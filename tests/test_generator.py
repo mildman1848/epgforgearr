@@ -74,6 +74,17 @@ def test_build_xmltv_uses_first_successful_source():
     assert root.find("programme/title").text == "Programme for 550"
 
 
+def test_build_xmltv_creates_one_provider_instance_for_multiple_channels():
+    mappings = parse_mapping_config([
+        {"channel_id": "one", "sources": [{"provider": "fake", "provider_channel_id": "1"}]},
+        {"channel_id": "two", "sources": [{"provider": "fake", "provider_channel_id": "2"}]},
+    ])
+    created = []
+    tree, report = build_xmltv(mappings, days=1, provider_factory=lambda _provider: (created.append(True) or FakeProvider()))
+    assert report["programme_count"] == 2
+    assert len(created) == 1
+
+
 def test_generate_xmltv_writes_xml_and_gzip(tmp_path, monkeypatch):
     import epgforgearr.generator as generator
 

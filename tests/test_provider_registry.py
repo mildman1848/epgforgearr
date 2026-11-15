@@ -6,12 +6,15 @@ from epgforgearr.providers import default_registry
 from epgforgearr.providers.registry import ProviderRegistry
 
 
-def test_default_registry_lists_magenta_and_tvdigital_as_usable_and_simpli_tv_as_planned():
+def test_default_registry_lists_magenta_tvdigital_and_new_providers_as_usable_and_simpli_tv_as_planned():
     described = {entry["id"]: entry for entry in default_registry.describe_all()}
     assert described["magenta"]["status"] == "poc"
     assert default_registry.is_registered("magenta")
     assert described["tvdigital_de"]["status"] == "poc"
     assert default_registry.is_registered("tvdigital_de")
+    for provider_id in ("ewtn_de", "freeepg_de"):
+        assert described[provider_id]["status"] == "implemented"
+        assert default_registry.is_registered(provider_id)
     assert described["simpli_tv"]["status"] == "planned"
     assert not default_registry.is_registered("simpli_tv")
 
