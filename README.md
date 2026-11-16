@@ -17,6 +17,7 @@ No Dispatcharr Channels are created automatically. Channel creation and stream l
 | `magenta` | Magenta TV EPG direct API | implemented | `/data/epgforgearr/magenta-full.xml(.gz)` |
 | `tvdigital_de` | TV Digital DE direct API | implemented | `/data/epgforgearr/tvdigital-de-full.xml(.gz)` |
 | `ewtn_de` | EWTN Deutschland public daily schedule | implemented | `/data/epgforgearr/ewtn-de-full.xml(.gz)` |
+| `bibeltv_impuls` | Bibel TV Impuls official programme page (structured page data) | implemented | `/data/epgforgearr/bibeltv-impuls-full.xml(.gz)` |
 | `freeepg_de` | FreeEPG Germany XMLTV feed | implemented | `/data/epgforgearr/freeepg-de-full.xml(.gz)` |
 | `freeepg_ch` | FreeEPG Switzerland XMLTV feed | implemented | `/data/epgforgearr/freeepg-ch-full.xml(.gz)` |
 | `simpli_tv` | SimpliTV / PULS24 AT | planned | not generated yet |

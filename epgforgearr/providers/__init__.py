@@ -5,6 +5,7 @@ from .registry import ProviderRegistry
 from .tvdigital import TvDigitalProvider
 from .ewtn import EwtnProvider
 from .freeepg import FreeEpgProvider
+from .bibeltv import BibelTvImpulsProvider
 
 # Single shared registry for the plugin. Adding a new source beyond Magenta
 # means registering it here (or via default_registry.register(...) from a
@@ -51,6 +52,14 @@ default_registry.register(
     supports=["channel_list", "programme_fetch"],
     notes="Free XMLTV feed for Switzerland from free-epg.de; separate source, refreshed on generation.",
 )
+default_registry.register(
+    "bibeltv_impuls",
+    BibelTvImpulsProvider,
+    label="Bibel TV Impuls",
+    status="implemented",
+    supports=["channel_list", "programme_fetch"],
+    notes="Public daily programme page; structured page data, no documented public API.",
+)
 default_registry.register_planned(
     "simpli_tv",
     label="SimpliTV / PULS24 AT",
@@ -58,4 +67,4 @@ default_registry.register_planned(
     notes="Planned direct adapter for Austrian guide data, using source endpoints directly.",
 )
 
-__all__ = ["ProviderRegistry", "default_registry", "MagentaProvider", "TvDigitalProvider", "EwtnProvider", "FreeEpgProvider"]
+__all__ = ["ProviderRegistry", "default_registry", "MagentaProvider", "TvDigitalProvider", "EwtnProvider", "FreeEpgProvider", "BibelTvImpulsProvider"]

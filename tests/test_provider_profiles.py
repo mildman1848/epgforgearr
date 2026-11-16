@@ -42,6 +42,11 @@ def test_provider_profile_matches_magenta_and_tvdigital_defaults():
     assert ewtn["output_path"] == "/data/epgforgearr/ewtn-de-full.xml"
     assert ewtn["epg_source_name"] == "EPGForgearr: EWTN Deutschland"
 
+    bibeltv = provider_profile("bibeltv_impuls")
+    assert bibeltv["output_path"] == "/data/epgforgearr/bibeltv-impuls-full.xml"
+    assert bibeltv["epg_source_name"] == "EPGForgearr: Bibel TV Impuls"
+    assert bibeltv["epg_source_priority"] == 85
+
     freeepg = provider_profile("freeepg_de")
     assert freeepg["output_path"] == "/data/epgforgearr/freeepg-de-full.xml"
     assert freeepg["epg_source_name"] == "EPGForgearr: FreeEPG Deutschland"
@@ -84,6 +89,7 @@ def test_generate_all_provider_sources_generates_and_installs_each_usable_provid
         "magenta": RecordingProvider([{"contentId": "550", "name": "Sport 1"}]),
         "tvdigital_de": RecordingProvider([{"id": "37", "name": "Das Erste"}]),
         "ewtn_de": RecordingProvider([{"id": "EWTN.de", "name": "EWTN Deutschland"}]),
+        "bibeltv_impuls": RecordingProvider([{"id": "BibelTVImpuls.de", "name": "Bibel TV Impuls"}]),
         "freeepg_de": RecordingProvider([{"id": "ARD.de", "name": "Das Erste"}]),
         "freeepg_ch": RecordingProvider([{"id": "SRF1.ch", "name": "SRF 1"}]),
     }
@@ -105,18 +111,20 @@ def test_generate_all_provider_sources_generates_and_installs_each_usable_provid
     result = generate_all_provider_sources(settings, provider_factory=lambda pid: providers[pid])
 
     assert result["status"] == "ok"
-    assert set(result["providers"].keys()) == {"magenta", "tvdigital_de", "ewtn_de", "freeepg_de", "freeepg_ch"}
+    assert set(result["providers"].keys()) == {"magenta", "tvdigital_de", "ewtn_de", "bibeltv_impuls", "freeepg_de", "freeepg_ch"}
     assert "simpli_tv" not in result["providers"]
     assert (tmp_path / "magenta-full.xml").exists()
     assert (tmp_path / "tvdigital_de-full.xml").exists()
     assert (tmp_path / "ewtn_de-full.xml").exists()
+    assert (tmp_path / "bibeltv_impuls-full.xml").exists()
     assert (tmp_path / "freeepg_de-full.xml").exists()
     assert (tmp_path / "freeepg_ch-full.xml").exists()
-    assert len(installed_calls) == 5
+    assert len(installed_calls) == 6
     assert {c["epg_source_name"] for c in installed_calls} == {
         "EPGForgearr: magenta",
         "EPGForgearr: tvdigital_de",
         "EPGForgearr: ewtn_de",
+        "EPGForgearr: bibeltv_impuls",
         "EPGForgearr: freeepg_de",
         "EPGForgearr: freeepg_ch",
     }

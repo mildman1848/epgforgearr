@@ -1,6 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-11-16
+
+- Added the `bibeltv_impuls` provider using schedule data embedded in Bibel TV's public Impuls programme page; it has its own output file and Dispatcharr EPG source.
+- Added `Bibel TV Impuls` to the selectable full-provider list.
+
 ## Unreleased
+
+- Added the `bibeltv_impuls` provider using schedule data embedded in Bibel TV's public Impuls programme page; it has its own output file and Dispatcharr EPG source.
+- Added `Bibel TV Impuls` to the selectable full-provider list.
 
 - Added `freeepg_ch` from FreeEPG's Swiss XMLTV feed with an independent selectable profile, output and Dispatcharr EPGSource.
 - Fixed FreeEPG XML parsing to retain child display names and programme fields until each complete XMLTV element is parsed.

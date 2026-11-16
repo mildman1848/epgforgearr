@@ -37,6 +37,11 @@ PROVIDER_PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
         "epg_source_name": "EPGForgearr: EWTN Deutschland",
         "epg_source_priority": 80,
     },
+    "bibeltv_impuls": {
+        "output_path": str(DATA_DIR / "bibeltv-impuls-full.xml"),
+        "epg_source_name": "EPGForgearr: Bibel TV Impuls",
+        "epg_source_priority": 85,
+    },
     "freeepg_de": {
         "output_path": str(DATA_DIR / "freeepg-de-full.xml"),
         "epg_source_name": "EPGForgearr: FreeEPG Deutschland",
