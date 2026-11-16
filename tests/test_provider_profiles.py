@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
 import epgforgearr.workflow as workflow
 from epgforgearr.workflow import generate_all_provider_sources, provider_profile, usable_provider_ids
 
@@ -128,6 +129,53 @@ def test_generate_all_provider_sources_generates_and_installs_each_usable_provid
         "EPGForgearr: freeepg_de",
         "EPGForgearr: freeepg_ch",
     }
+
+
+def test_generate_all_provider_sources_can_generate_without_installing(tmp_path, monkeypatch):
+    providers = {"magenta": RecordingProvider([{"id": "M1", "name": "Magenta One"}])}
+    monkeypatch.setattr(workflow, "provider_profile", _fake_profile_in(tmp_path))
+    monkeypatch.setattr(workflow, "install_epg_source", lambda *args, **kwargs: pytest.fail("install should not run"))
+    result = generate_all_provider_sources(
+        {"source_magenta": True, "source_tvdigital_de": False, "days": 1, "gzip_output": False},
+        provider_factory=lambda pid: providers[pid], generate=True, install=False,
+    )
+    assert result["status"] == "ok"
+    assert result["provider_ids"] == ["magenta"]
+    assert result["providers"]["magenta"]["generated"]["status"] == "ok"
+    assert "installed" not in result["providers"]["magenta"]
+
+
+def test_generate_all_provider_sources_can_install_without_generating(tmp_path, monkeypatch):
+    installed = []
+    monkeypatch.setattr(workflow, "provider_profile", _fake_profile_in(tmp_path))
+    monkeypatch.setattr(workflow, "generate_full_provider_epg", lambda *args, **kwargs: pytest.fail("generate should not run"))
+    monkeypatch.setattr(workflow, "install_epg_source", lambda settings, logger=None: installed.append(settings["full_provider"]) or {"status": "ok", "message": "installed"})
+    result = generate_all_provider_sources(
+        {"source_magenta": False, "source_bibeltv_impuls": True}, generate=False, install=True,
+    )
+    assert result["status"] == "ok"
+    assert installed == ["bibeltv_impuls"]
+
+
+def test_generate_all_provider_sources_rejects_empty_selection():
+    settings = {f"source_{provider_id}": False for provider_id in usable_provider_ids()}
+    result = generate_all_provider_sources(settings)
+    assert result["status"] == "error"
+    assert result["provider_ids"] == []
+
+
+def test_manifest_exposes_exactly_four_requested_actions():
+    import json
+    from pathlib import Path
+
+    manifest = json.loads((Path(__file__).resolve().parents[1] / "plugin.json").read_text())
+    assert [action["id"] for action in manifest["actions"]] == [
+        "scan_missing_epg", "install_provider_sources", "generate_provider_epgs", "install_and_generate_provider_epgs"
+    ]
+    assert {field["id"] for field in manifest["fields"] if field["id"].startswith("source_")} == {
+        f"source_{provider_id}" for provider_id in usable_provider_ids()
+    }
+
 
 
 def test_generate_all_provider_sources_continues_after_one_provider_fails(tmp_path, monkeypatch):

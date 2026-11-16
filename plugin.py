@@ -392,6 +392,8 @@ class Plugin:
     def run(self, action: str, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         logger = context.get("logger") or logging.getLogger(__name__)
         settings = _merge_defaults(_settings_from_context_and_params(context, params))
+        if action not in {item["id"] for item in MANIFEST.get("actions", [])}:
+            return {"status": "error", "message": f"Unknown action: {action}"}
         try:
             if action == "list_sources":
                 sources = supported_sources()
@@ -440,8 +442,12 @@ class Plugin:
                     return generated
                 installed = install_epg_source(provider_settings, logger=logger)
                 return {"status": installed["status"], "message": f"{generated.get('message')}; {installed.get('message')}", "generated": generated, "installed": installed}
-            if action == "generate_all_provider_sources":
-                return generate_all_provider_sources(settings, logger=logger)
+            if action == "generate_provider_epgs":
+                return generate_all_provider_sources(settings, logger=logger, generate=True, install=False)
+            if action == "install_provider_sources":
+                return generate_all_provider_sources(settings, logger=logger, generate=False, install=True)
+            if action == "install_and_generate_provider_epgs":
+                return generate_all_provider_sources(settings, logger=logger, generate=True, install=True)
             return {"status": "error", "message": f"Unknown action: {action}"}
         except Exception as exc:  # noqa: BLE001 - plugin boundary should report typed failure
             logger.error("epgforgearr: action %s failed (%s)", action, type(exc).__name__)

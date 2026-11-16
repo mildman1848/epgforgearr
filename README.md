@@ -38,56 +38,19 @@ This project is maintained independently by Mildman1848 and is not affiliated wi
 
 ## Main workflow
 
-Recommended production-safe flow:
+1. Choose any combination of provider toggles in the plugin settings.
+2. Run `Scan` to create reviewable channel/provider suggestions.
+3. Choose `Generate EPG for sources` to write files only, `Install sources` to register existing files in Dispatcharr, or `Install sources and generate EPG` to do both.
+4. Dispatcharr imports each installed XMLTV source; Channels still need matching EPG IDs to receive programme rows.
 
-1. `scan_missing_epg`
-   - scans Dispatcharr streams/channels for EPG gaps
-   - fetches the channel lists of all usable providers and ranks candidates by
-     confidence, with provider attribution and IDs
-   - reports `provider_coverage` (mapping coverage per provider) separately from
-     `stream_availability`; adds `programme_availability` per provider (last-known
-     `programme_count`, `coverage_window`, `last_success_at`, `last_status`) read
-     from the persisted scheduler state only. It is cached and may be stale, is
-     `null`/`known: false` when no successful refresh is persisted, and the scan
-     never fetches schedules
-   - writes review file: `/data/epgforgearr/review/suggestions.json`
-2. User review
-   - edit `selected` per item
-   - optionally replace `chosen_candidate` with another candidate
-3. `export_mapping_template`
-   - writes `/data/epgforgearr/review/mapping.selected.json`
-   - only `selected=true` items are exported
-4. `generate_from_mapping`
-   - writes `/data/epgforgearr/epgforgearr.xml(.gz)`
-5. `install_epg_source`
-   - creates or updates the Dispatcharr EPG source for the generated local XMLTV file
-6. Dispatcharr EPG refresh parses the source.
+The daily refresh, when enabled, generates and installs only the selected providers.
 
-For full-provider generation, use:
+## Source actions
 
-```text
-generate_all_provider_sources
-```
-
-That action generates one XMLTV file and one Dispatcharr `EPGSource` per usable provider, for example:
-
-- `EPGForgearr: Magenta`
-- `EPGForgearr: TV Digital DE`
-
-## Actions
-
-- `list_sources` — list provider adapters
-- `scheduler_status` — show persisted scheduler state
-- `scan_missing_epg` — scan streams/channels and write suggestions
-- `export_mapping_template` — convert reviewed suggestions to selected mapping JSON
-- `validate_mapping` — validate inline mapping JSON
-- `generate_epg` — legacy inline mapping generation
-- `generate_from_mapping` — generate XMLTV from selected mapping file
-- `install_epg_source` — create/update Dispatcharr EPGSource
-- `generate_and_install` — mapping-based generation + install
-- `generate_full_provider_epg` — generate a single provider full EPG
-- `generate_full_and_install` — generate + install one provider source
-- `generate_all_provider_sources` — generate + install every usable provider source
+- Select any combination of providers in the plugin settings. The selection applies to scans, manual source actions and the daily auto-refresh.
+- `Install sources` creates/updates selected Dispatcharr EPG sources from XMLTV files that already exist.
+- `Generate EPG for sources` writes selected XMLTV files without installing or refreshing Dispatcharr sources.
+- `Install sources and generate EPG` performs both steps for each selected provider.
 
 ## Safety notes
 

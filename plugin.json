@@ -1,6 +1,6 @@
 {
   "name": "EPGForgearr",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Supplemental XMLTV EPG generator for Dispatcharr. Workflow: scan missing EPG, review suggestions, generate XMLTV, install Dispatcharr EPG source.",
   "author": "Mildman1848",
   "license": "AGPL-3.0-only",
@@ -17,11 +17,46 @@
       "help_text": "Number of EPG days to fetch."
     },
     {
-      "id": "output_path",
-      "label": "Output XMLTV path",
-      "type": "string",
-      "default": "/data/epgforgearr/magenta-full.xml",
-      "help_text": "XMLTV output path inside Dispatcharr container."
+      "id": "source_magenta",
+      "label": "Magenta TV",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include Magenta TV in scan and source actions."
+    },
+    {
+      "id": "source_tvdigital_de",
+      "label": "TV Digital DE",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include TV Digital DE in scan and source actions."
+    },
+    {
+      "id": "source_ewtn_de",
+      "label": "EWTN Deutschland",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include EWTN Deutschland in scan and source actions."
+    },
+    {
+      "id": "source_freeepg_de",
+      "label": "FreeEPG Deutschland",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include FreeEPG Deutschland in scan and source actions."
+    },
+    {
+      "id": "source_freeepg_ch",
+      "label": "FreeEPG Schweiz",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include FreeEPG Schweiz in scan and source actions."
+    },
+    {
+      "id": "source_bibeltv_impuls",
+      "label": "Bibel TV Impuls",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Include Bibel TV Impuls in scan and source actions."
     },
     {
       "id": "gzip_output",
@@ -45,30 +80,27 @@
       "help_text": "Reviewed mapping JSON used for XMLTV generation."
     },
     {
-      "id": "full_provider",
-      "label": "Full EPG provider",
-      "type": "select",
-      "default": "magenta",
-      "options": [
-        {"value": "magenta", "label": "Magenta TV"},
-        {"value": "tvdigital_de", "label": "TV Digital DE"},
-        {"value": "ewtn_de", "label": "EWTN Deutschland"},
-        {"value": "freeepg_de", "label": "FreeEPG Deutschland"},
-        {"value": "freeepg_ch", "label": "Free EPG Schweiz"},
-        {"value": "bibeltv_impuls", "label": "Bibel TV Impuls"}
-      ],
-      "help_text": "Provider used by Generate full provider EPG (single-provider actions). Generate all provider EPG sources ignores this and covers every usable provider."
-    },
-    {
       "id": "scan_min_confidence",
       "label": "Minimum suggestion confidence",
       "type": "select",
       "default": "medium",
       "options": [
-        {"value": "exact", "label": "Exact only"},
-        {"value": "high", "label": "High or better"},
-        {"value": "medium", "label": "Medium or better"},
-        {"value": "low", "label": "Low and better (review only)"}
+        {
+          "value": "exact",
+          "label": "Exact only"
+        },
+        {
+          "value": "high",
+          "label": "High or better"
+        },
+        {
+          "value": "medium",
+          "label": "Medium or better"
+        },
+        {
+          "value": "low",
+          "label": "Low and better (review only)"
+        }
       ],
       "help_text": "Use low only for review reports. Low confidence is not safe for automatic activation."
     },
@@ -87,36 +119,6 @@
       "help_text": "Leave off for real use. Suggestions are review material; variants can look deceptively exact."
     },
     {
-      "id": "epg_source_name",
-      "label": "Dispatcharr EPG source name",
-      "type": "string",
-      "default": "EPGForgearr: Magenta",
-      "help_text": "Name of the managed Dispatcharr EPGSource."
-    },
-    {
-      "id": "epg_source_active",
-      "label": "Activate EPG source after install",
-      "type": "boolean",
-      "default": true,
-      "help_text": "Create/update the EPG source as active. Keep off for dry production staging."
-    },
-    {
-      "id": "epg_source_priority",
-      "label": "EPG source priority",
-      "type": "number",
-      "default": 60,
-      "min": 1,
-      "max": 999,
-      "help_text": "Dispatcharr source priority. Higher/lower semantics depend on Dispatcharr; keep supplemental conservative."
-    },
-    {
-      "id": "mapping_config_json",
-      "label": "Inline channel/source mapping JSON",
-      "type": "text",
-      "default": "[]",
-      "help_text": "Advanced/manual path for generate_epg legacy action. Prefer suggestions_path + mapping_path workflow."
-    },
-    {
       "id": "status",
       "label": "Last action",
       "type": "text",
@@ -127,86 +129,37 @@
       "label": "Daily auto-refresh",
       "type": "boolean",
       "default": true,
-      "help_text": "Regenerate the full provider EPG daily in the background (Celery worker self-scheduler)."
+      "help_text": "Daily auto-refresh for selected EPG sources (Celery worker self-scheduler)."
     }
   ],
   "actions": [
     {
-      "id": "list_sources",
-      "label": "List provider adapters",
-      "description": "Show supported EPG provider adapters.",
-      "button_label": "Sources",
-      "button_variant": "light"
-    },
-    {
       "id": "scan_missing_epg",
       "label": "Scan missing EPG",
-      "description": "Scan Kodiboxarr-linked Dispatcharr channels and write reviewable provider suggestions.",
+      "description": "Scan linked Dispatcharr channels using selected provider sources and write reviewable suggestions.",
       "button_label": "Scan",
       "button_variant": "light"
     },
     {
-      "id": "export_mapping_template",
-      "label": "Export selected mapping",
-      "description": "Convert reviewed suggestions to mapping.selected.json. Only selected suggestions are exported.",
-      "button_label": "Export mapping",
-      "button_variant": "light"
-    },
-    {
-      "id": "validate_mapping",
-      "label": "Validate inline mapping",
-      "description": "Validate configured inline channel/source mapping without fetching EPG.",
-      "button_label": "Validate inline",
-      "button_variant": "light"
-    },
-    {
-      "id": "generate_from_mapping",
-      "label": "Generate XMLTV from selected mapping",
-      "description": "Fetch provider data from mapping.selected.json and write XMLTV output.",
-      "button_label": "Generate XMLTV",
+      "id": "install_provider_sources",
+      "label": "Install sources",
+      "description": "Create or update Dispatcharr EPG sources for selected providers using their existing generated XMLTV files.",
+      "button_label": "Install sources",
       "button_variant": "filled"
     },
     {
-      "id": "generate_full_provider_epg",
-      "label": "Generate full provider EPG",
-      "description": "Download all channels/programmes from the selected provider and write a complete XMLTV file.",
-      "button_label": "Generate full EPG",
+      "id": "generate_provider_epgs",
+      "label": "Generate EPG for sources",
+      "description": "Generate XMLTV files for selected provider sources without installing or refreshing Dispatcharr EPG sources.",
+      "button_label": "Generate EPG",
       "button_variant": "filled"
     },
     {
-      "id": "install_epg_source",
-      "label": "Install Dispatcharr EPG source",
-      "description": "Create/update the managed Dispatcharr EPGSource for the generated XMLTV file.",
-      "button_label": "Install source",
+      "id": "install_and_generate_provider_epgs",
+      "label": "Install sources and generate EPG",
+      "description": "Generate XMLTV files and create or update Dispatcharr EPG sources for selected providers.",
+      "button_label": "Install sources and generate EPG",
       "button_variant": "filled"
-    },
-    {
-      "id": "generate_full_and_install",
-      "label": "Generate full EPG and install",
-      "description": "Download the full provider EPG and create/update the Dispatcharr EPGSource.",
-      "button_label": "Full Generate + Install",
-      "button_variant": "filled"
-    },
-    {
-      "id": "generate_and_install",
-      "label": "Generate and install",
-      "description": "Generate XMLTV from selected mapping and create/update Dispatcharr EPGSource.",
-      "button_label": "Generate + Install",
-      "button_variant": "filled"
-    },
-    {
-      "id": "generate_all_provider_sources",
-      "label": "Generate all provider EPG sources",
-      "description": "Download the full EPG for every usable provider (Magenta, TV Digital DE, ...) and create/update one separate Dispatcharr EPGSource per provider. Skips providers that are only planned (e.g. SimpliTV).",
-      "button_label": "Generate all providers",
-      "button_variant": "filled"
-    },
-    {
-      "id": "scheduler_status",
-      "label": "Scheduler status",
-      "description": "Show last/next scheduled full refresh state (daily self-refresh).",
-      "button_label": "Status",
-      "button_variant": "light"
     }
   ]
 }

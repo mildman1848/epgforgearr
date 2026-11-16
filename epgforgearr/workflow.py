@@ -56,6 +56,14 @@ PROVIDER_PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
 DEFAULT_PROVIDER_PRIORITY = 100
 
 
+def selected_provider_ids(settings: dict[str, Any]) -> list[str]:
+    """Return usable providers enabled in settings; legacy settings default to all."""
+    provider_ids = usable_provider_ids()
+    if not any(f"source_{provider_id}" in settings for provider_id in provider_ids):
+        return provider_ids
+    return [provider_id for provider_id in provider_ids if bool(settings.get(f"source_{provider_id}", False))]
+
+
 def provider_profile(provider_id: str) -> dict[str, Any]:
     """Per-provider defaults: output path, Dispatcharr EPGSource name/priority.
 
@@ -148,7 +156,9 @@ def scan_missing_epg(
     suggestions_path = Path(str(settings.get("suggestions_path") or DEFAULT_SUGGESTIONS_PATH))
 
     rows = _dispatcharr_kodibox_rows(include_existing=include_existing)
-    provider_ids = usable_provider_ids()
+    provider_ids = selected_provider_ids(settings)
+    if not provider_ids:
+        return {"status": "error", "message": "no EPG providers selected", "provider_ids": [], "providers": {}}
     indexes: dict[str, dict[str, Any]] = {}
     coverage: dict[str, dict[str, Any]] = {}
     for provider_id in provider_ids:
@@ -378,51 +388,50 @@ def generate_all_provider_sources(
     settings: dict[str, Any],
     logger: logging.Logger | None = None,
     provider_factory: Callable[[str], Any] | None = None,
+    *,
+    generate: bool = True,
+    install: bool = True,
 ) -> dict[str, Any]:
-    """Generate and install a separate Dispatcharr EPGSource per usable provider.
-
-    Implements the "separate EPGSource per provider" design: every provider
-    that has a usable factory (not merely 'planned', e.g. simpli_tv) is
-    generated and installed independently, each with its own output file and
-    EPGSource (see `provider_profile`). One provider failing does not stop
-    the others; per-provider outcomes are returned under `providers` so the
-    caller (action handler or scheduler) can record/report them individually.
-    Channels are never auto-mapped and no Channel objects are created here.
-    """
+    """Generate and/or install independent sources for selected providers."""
     logger = logger or logging.getLogger(__name__)
-    provider_ids = usable_provider_ids()
+    provider_ids = selected_provider_ids(settings)
+    if not provider_ids:
+        return {"status": "error", "message": "no EPG providers selected", "providers": {}, "provider_ids": []}
     results: dict[str, dict[str, Any]] = {}
     ok_count = 0
     error_count = 0
     for provider_id in provider_ids:
         provider_settings = _settings_for_provider(settings, provider_id)
         try:
-            generated = generate_full_provider_epg(provider_settings, logger=logger, provider_factory=provider_factory)
-            if generated.get("status") not in {"ok", "warning"}:
-                results[provider_id] = {"status": "error", "message": generated.get("message"), "generated": generated}
-                error_count += 1
-                continue
-            installed = install_epg_source(provider_settings, logger=logger)
-            status = installed.get("status", "ok")
+            generated = None
+            if generate:
+                generated = generate_full_provider_epg(provider_settings, logger=logger, provider_factory=provider_factory)
+                if generated.get("status") not in {"ok", "warning"}:
+                    results[provider_id] = {"status": "error", "message": generated.get("message"), "generated": generated}
+                    error_count += 1
+                    continue
+            installed = install_epg_source(provider_settings, logger=logger) if install else None
+            outcome = installed.get("status", "ok") if installed else (generated or {}).get("status", "ok")
             results[provider_id] = {
-                "status": status,
-                "message": f"{generated.get('message')}; {installed.get('message')}",
-                "generated": generated,
-                "installed": installed,
+                "status": outcome,
+                "message": "; ".join(part.get("message", "") for part in (generated, installed) if part),
+                **({"generated": generated} if generated is not None else {}),
+                **({"installed": installed} if installed is not None else {}),
             }
-            if status in {"ok", "warning"}:
+            if outcome in {"ok", "warning", "pending"}:
                 ok_count += 1
             else:
                 error_count += 1
         except Exception as exc:  # noqa: BLE001 - one provider failing must not abort the rest
-            logger.error("epgforgearr: full generation failed for provider %s (%s)", provider_id, type(exc).__name__)
+            logger.error("epgforgearr: provider %s action failed (%s)", provider_id, type(exc).__name__)
             results[provider_id] = {"status": "error", "message": f"{type(exc).__name__} (details redacted)"}
             error_count += 1
 
     overall = "ok" if error_count == 0 else ("warning" if ok_count else "error")
+    verb = "generated and installed" if generate and install else "generated" if generate else "installed"
     return {
         "status": overall,
-        "message": f"generated {ok_count}/{len(provider_ids)} provider EPG source(s), {error_count} failed",
+        "message": f"{verb} {ok_count}/{len(provider_ids)} selected provider source(s), {error_count} failed",
         "providers": results,
         "provider_ids": provider_ids,
     }
