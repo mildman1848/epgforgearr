@@ -5,10 +5,12 @@
 - Added the `bibeltv_impuls` provider using schedule data embedded in Bibel TV's public Impuls programme page; it has its own output file and Dispatcharr EPG source.
 - Added `Bibel TV Impuls` to the selectable full-provider list.
 
-## Unreleased (0.5.0)
+## 5.0.0 — 2026-11-16
 
-- Added independent enable/disable settings for every usable EPG provider; scans and daily refresh now honor the selected combination.
-- Reduced visible plugin actions to Scan, Install sources, Generate EPG for sources, and Install sources and generate EPG. Separate install and generation actions no longer implicitly perform the other step.
+- Added independent enable/disable settings for every usable EPG provider; scans and daily refresh honor the selected combination.
+- Reduced the visible actions to Scan, Install sources, Generate EPG for sources, and Install sources and generate EPG.
+
+## Unreleased
 
 - Added the `bibeltv_impuls` provider using schedule data embedded in Bibel TV's public Impuls programme page; it has its own output file and Dispatcharr EPG source.
 - Added `Bibel TV Impuls` to the selectable full-provider list.
