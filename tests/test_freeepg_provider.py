@@ -39,6 +39,18 @@ def test_freeepg_parses_channels_programmes_and_caches_feed(monkeypatch):
     assert rows[0]["start"].utcoffset().total_seconds() == 3600
     assert provider.fetch_programmes("ARD.de") == []
     assert len(calls) == 1
+    assert calls[0] == "https://free-epg.de/api/epg/de.xml.gz"
+
+
+def test_freeepg_country_selects_feed_and_validates_country():
+    assert FreeEpgProvider(country="CH").url == "https://free-epg.de/api/epg/ch.xml.gz"
+    for country in ("", "c", "chx", "1!", "éé"):
+        try:
+            FreeEpgProvider(country=country)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid country should be rejected: {country!r}")
 
 
 def test_freeepg_rejects_gzip_bomb_over_expansion_cap(monkeypatch):

@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Added `ewtn_de` from EWTN Deutschland's public daily programme pages and `freeepg_de` from FreeEPG's German XMLTV feed. Each gets its own selectable provider profile, XMLTV output and Dispatcharr EPGSource. FreeEPG's current German feed does not contain EWTN, so the direct EWTN adapter is still needed.
+- Added `freeepg_ch` from FreeEPG's Swiss XMLTV feed with an independent selectable profile, output and Dispatcharr EPGSource.
+- Fixed FreeEPG XML parsing to retain child display names and programme fields until each complete XMLTV element is parsed.
+- FreeEPG lists Bibel TV Impuls and Bibel TV Musik in its Germany directory, but neither ID is present in the current downloaded German XMLTV feed; only Bibel TV main has confirmed programme rows. Do not map those variants to Bibel TV main.
 - Provider instances are now cached once per XMLTV build, avoiding repeated feed downloads for multi-channel providers.
 
 - `scan_missing_epg` now searches all usable provider channel lists, ranks and

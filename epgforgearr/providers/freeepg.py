@@ -9,19 +9,22 @@ from urllib.request import Request, urlopen
 
 
 class FreeEpgProvider:
-    URL = "https://free-epg.de/api/epg/de.xml.gz"
+    BASE_URL = "https://free-epg.de/api/epg"
     MAX_COMPRESSED_BYTES = 25 * 1024 * 1024
     MAX_XML_BYTES = 200 * 1024 * 1024
     HEADERS = {"User-Agent": "EPGForgearr/1.0 (+XMLTV guide generator)", "Accept-Encoding": "identity"}
 
-    def __init__(self) -> None:
+    def __init__(self, country: str = "de") -> None:
+        if len(country) != 2 or not country.isascii() or not country.isalpha():
+            raise ValueError("country must be a two-letter ISO code")
+        self.url = f"{self.BASE_URL}/{country.lower()}.xml.gz"
         self._channels: list[dict[str, str]] | None = None
         self._programmes: dict[str, list[dict[str, Any]]] | None = None
 
     def _load(self) -> None:
         if self._programmes is not None:
             return
-        request = Request(self.URL, headers=self.HEADERS)
+        request = Request(self.url, headers=self.HEADERS)
         with urlopen(request, timeout=45) as response:
             compressed = response.read(self.MAX_COMPRESSED_BYTES + 1)
         if len(compressed) > self.MAX_COMPRESSED_BYTES:
@@ -38,6 +41,7 @@ class FreeEpgProvider:
                 names = [node.text.strip() for node in elem.findall("display-name") if node.text and node.text.strip()]
                 if channel_id and names:
                     channels.append({"id": channel_id, "name": names[0]})
+                elem.clear()
             elif elem.tag == "programme":
                 channel_id = elem.get("channel", "").strip()
                 start = _xmltv_datetime(elem.get("start"))
@@ -51,7 +55,6 @@ class FreeEpgProvider:
                         "start": start,
                         "stop": stop,
                     })
-            if elem.tag in {"channel", "programme"}:
                 elem.clear()
         if not channels:
             raise RuntimeError("FreeEPG feed contained no channels")

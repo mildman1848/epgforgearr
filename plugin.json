@@ -1,6 +1,6 @@
 {
   "name": "EPGForgearr",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Supplemental XMLTV EPG generator for Dispatcharr. Workflow: scan missing EPG, review suggestions, generate XMLTV, install Dispatcharr EPG source.",
   "author": "Mildman1848",
   "license": "AGPL-3.0-only",
@@ -53,7 +53,8 @@
         {"value": "magenta", "label": "Magenta TV"},
         {"value": "tvdigital_de", "label": "TV Digital DE"},
         {"value": "ewtn_de", "label": "EWTN Deutschland"},
-        {"value": "freeepg_de", "label": "FreeEPG Deutschland"}
+        {"value": "freeepg_de", "label": "FreeEPG Deutschland"},
+        {"value": "freeepg_ch", "label": "Free EPG Schweiz"}
       ],
       "help_text": "Provider used by Generate full provider EPG (single-provider actions). Generate all provider EPG sources ignores this and covers every usable provider."
     },

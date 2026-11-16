@@ -43,6 +43,14 @@ default_registry.register(
     supports=["channel_list", "programme_fetch"],
     notes="Free XMLTV feed for Germany from free-epg.de; separate source, refreshed on generation.",
 )
+default_registry.register(
+    "freeepg_ch",
+    lambda: FreeEpgProvider(country="ch"),
+    label="FreeEPG Schweiz",
+    status="implemented",
+    supports=["channel_list", "programme_fetch"],
+    notes="Free XMLTV feed for Switzerland from free-epg.de; separate source, refreshed on generation.",
+)
 default_registry.register_planned(
     "simpli_tv",
     label="SimpliTV / PULS24 AT",

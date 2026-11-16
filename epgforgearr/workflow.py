@@ -42,6 +42,11 @@ PROVIDER_PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
         "epg_source_name": "EPGForgearr: FreeEPG Deutschland",
         "epg_source_priority": 90,
     },
+    "freeepg_ch": {
+        "output_path": str(DATA_DIR / "freeepg-ch-full.xml"),
+        "epg_source_name": "EPGForgearr: FreeEPG Schweiz",
+        "epg_source_priority": 95,
+    },
 }
 DEFAULT_PROVIDER_PRIORITY = 100
 
